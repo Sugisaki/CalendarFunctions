@@ -55,7 +55,7 @@ func HandleHolidayRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ---- 日本の祝日カレンダー ID ----
-	holidayCalendarID := "japanese__ja@holiday.calendar.google.com"
+	holidayCalendarID := "ja.japanese.official#holiday@group.v.calendar.google.com"
 
 	// ---- 祝日を取得 ----
 	events, err := srv.Events.List(holidayCalendarID).
