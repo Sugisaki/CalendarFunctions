@@ -1,17 +1,35 @@
 package holidayapi
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
 	"time"
 
+	firebase "firebase.google.com/go/v4"
+	"firebase.google.com/go/v4/appcheck"
+	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
 	calendar "google.golang.org/api/calendar/v3"
 	"google.golang.org/api/option"
-	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
 )
 
+var appCheckClient *appcheck.Client
+
 func init() {
+	ctx := context.Background()
+	// 異なるプロジェクトのApp Checkトークンを検証するため、そのプロジェクトIDを指定します
+	conf := &firebase.Config{ProjectID: "tianmingcalendar"} // 天命カレンダー
+	app, err := firebase.NewApp(ctx, conf)
+	if err != nil {
+		log.Fatalf("[Error] error initializing app: %v\n", err)
+	}
+
+	appCheckClient, err = app.AppCheck(ctx)
+	if err != nil {
+		log.Fatalf("[Error] error initializing app check: %v\n", err)
+	}
+
 	functions.HTTP("HandleHolidayRequest", HandleHolidayRequest)
 }
 
@@ -28,6 +46,23 @@ type Response struct {
 // HandleHolidayRequest は ?date=YYYY-MM-DD を受け取り、その月の祝日を返す
 func HandleHolidayRequest(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
+	// ---- App Check Verification ----
+	appCheckToken := r.Header.Get("X-Firebase-AppCheck")
+	if appCheckToken == "" {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	_, err := appCheckClient.VerifyToken(appCheckToken)
+	if err != nil {
+		log.Printf("[Error] App Check token verification failed: %v", err)
+		log.Printf("[Debug] App Check token ===> %v", appCheckToken)
+		log.Printf("[Debug] Date ===> %v", r.URL.Query().Get("date"))
+
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	// ---- 入力日付を取得 ----
 	dateStr := r.URL.Query().Get("date")
@@ -50,7 +85,7 @@ func HandleHolidayRequest(w http.ResponseWriter, r *http.Request) {
 	srv, err := calendar.NewService(ctx, option.WithScopes(calendar.CalendarReadonlyScope))
 	if err != nil {
 		http.Error(w, "calendar service error", http.StatusInternalServerError)
-		log.Println("calendar service error:", err)
+		log.Println("[Error] calendar service error:", err)
 		return
 	}
 
@@ -64,7 +99,7 @@ func HandleHolidayRequest(w http.ResponseWriter, r *http.Request) {
 		Do()
 	if err != nil {
 		http.Error(w, "calendar API error", http.StatusInternalServerError)
-		log.Println("calendar API error:", err)
+		log.Println("[Error] calendar API error:", err)
 		return
 	}
 
