@@ -45,11 +45,25 @@ type Response struct {
 
 // HandleHolidayRequest は ?date=YYYY-MM-DD を受け取り、その月の祝日を返す
 func HandleHolidayRequest(w http.ResponseWriter, r *http.Request) {
+	// CORS設定
+	// 必要に応じて Access-Control-Allow-Origin を特定のドメインに変更してください
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Firebase-AppCheck")
+	w.Header().Set("Access-Control-Max-Age", "3600")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	ctx := r.Context()
 
 	// ---- App Check Verification ----
 	appCheckToken := r.Header.Get("X-Firebase-AppCheck")
 	if appCheckToken == "" {
+		log.Println("[Error] App Check token is missing")
+
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -66,13 +80,20 @@ func HandleHolidayRequest(w http.ResponseWriter, r *http.Request) {
 
 	// ---- 入力日付を取得 ----
 	dateStr := r.URL.Query().Get("date")
+
 	if dateStr == "" {
-		http.Error(w, "date parameter required: e.g. ?date=2025-03-10", http.StatusBadRequest)
+		log.Println("[Error] date parameter required: e.g. ?date=2006-01-02")
+		log.Printf("[Debug] dateStr ===> %v", dateStr)
+
+		http.Error(w, "date parameter required: e.g. ?date=2006-01-02", http.StatusBadRequest)
 		return
 	}
 
 	inputDate, err := time.Parse("2006-01-02", dateStr)
 	if err != nil {
+		log.Println("[Error] invalid date format (use YYYY-MM-DD)")
+		log.Printf("[Debug] dateStr ===> %v", dateStr)
+
 		http.Error(w, "invalid date format (use YYYY-MM-DD)", http.StatusBadRequest)
 		return
 	}
@@ -84,8 +105,9 @@ func HandleHolidayRequest(w http.ResponseWriter, r *http.Request) {
 	// ---- Google Calendar API クライアント作成（サービスアカウント自動認証） ----
 	srv, err := calendar.NewService(ctx, option.WithScopes(calendar.CalendarReadonlyScope))
 	if err != nil {
-		http.Error(w, "calendar service error", http.StatusInternalServerError)
 		log.Println("[Error] calendar service error:", err)
+
+		http.Error(w, "calendar service error", http.StatusInternalServerError)
 		return
 	}
 
@@ -98,8 +120,9 @@ func HandleHolidayRequest(w http.ResponseWriter, r *http.Request) {
 		TimeMax(lastDay.Format(time.RFC3339)).
 		Do()
 	if err != nil {
-		http.Error(w, "calendar API error", http.StatusInternalServerError)
 		log.Println("[Error] calendar API error:", err)
+
+		http.Error(w, "calendar API error", http.StatusInternalServerError)
 		return
 	}
 
